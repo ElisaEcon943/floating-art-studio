@@ -27,6 +27,8 @@ export default function Home() {
   const [hasMask, setHasMask] = useState(false);
   const [excludeMode, setExcludeMode] = useState(false);
   const drag = useRef<{ id: number; dx: number; dy: number } | null>(null);
+  const history = useRef<Piece[][]>([]);
+  const projectInput = useRef<HTMLInputElement | null>(null);
   const runtime = useRef<SamRuntime | null>(null);
   const sourceImg = useRef<HTMLImageElement | null>(null);
   const maskCanvas = useRef<HTMLCanvasElement | null>(null);
@@ -95,6 +97,10 @@ export default function Home() {
     if (!runtime.current || !image) return;
     e.preventDefault(); const rect = e.currentTarget.getBoundingClientRect();
     const label: 0 | 1 = e.button === 2 || excludeMode ? 0 : 1;
+    if (label === 0 && !points.some(p => p.label === 1)) {
+      setStatus("请先用“＋保留笔”点击要提取的主体，再用排除笔修边");
+      return;
+    }
     const point: Point = { position: [(e.clientX-rect.left)/rect.width, (e.clientY-rect.top)/rect.height], label };
     const next = [...points, point]; setPoints(next); void decode(next);
   };
@@ -116,7 +122,7 @@ export default function Home() {
     const pad=6, sx=Math.max(0,minX-pad), sy=Math.max(0,minY-pad), sw=Math.min(width-sx,maxX-minX+pad*2), sh=Math.min(height-sy,maxY-minY+pad*2);
     const cut=document.createElement("canvas");cut.width=sw;cut.height=sh;cut.getContext("2d")!.drawImage(work,sx,sy,sw,sh,0,0,sw,sh);
     const id=Date.now(); const ratio=sw/sh; const w=Math.min(42,Math.max(18,28*ratio)); const h=Math.min(45,Math.max(18,28/ratio));
-    setPieces(v=>[...v,{id,x:12+(v.length*17)%55,y:14+(v.length*19)%50,w,h,src:cut.toDataURL("image/png"),motion:motions[v.length%4].id,delay:v.length*.18}]);
+    setPieces(v=>{history.current.push(v);return [...v,{id,x:12+(v.length*17)%55,y:14+(v.length*19)%50,w,h,src:cut.toDataURL("image/png"),motion:motions[v.length%4].id,delay:v.length*.18}]});
     setSelected(id); clearSelection(); setMode("compose"); setStatus("元素已提取为透明图层");
   };
 
@@ -124,8 +130,14 @@ export default function Home() {
     const rect=e.currentTarget.parentElement!.getBoundingClientRect();drag.current={id:p.id,dx:e.clientX-rect.left-rect.width*p.x/100,dy:e.clientY-rect.top-rect.height*p.y/100};e.currentTarget.setPointerCapture(e.pointerId);setSelected(p.id);
   };
   const move = (e: PointerEvent<HTMLButtonElement>) => { if(!drag.current)return;const rect=e.currentTarget.parentElement!.getBoundingClientRect();const x=Math.max(0,Math.min(84,(e.clientX-rect.left-drag.current.dx)/rect.width*100));const y=Math.max(0,Math.min(80,(e.clientY-rect.top-drag.current.dy)/rect.height*100));setPieces(v=>v.map(p=>p.id===drag.current!.id?{...p,x,y}:p)); };
-  const setMotion=(motion:Motion)=>setPieces(v=>v.map(p=>p.id===selected?{...p,motion}:p));
-  const removeSelected=()=>{setPieces(v=>v.filter(p=>p.id!==selected));setSelected(null)};
+  const setMotion=(motion:Motion)=>setPieces(v=>{history.current.push(v);return v.map(p=>p.id===selected?{...p,motion}:p)});
+  const removeSelected=()=>{setPieces(v=>{history.current.push(v);return v.filter(p=>p.id!==selected)});setSelected(null)};
+  const undo=()=>{const previous=history.current.pop();if(previous){setPieces(previous);setSelected(null);setStatus("已撤销上一步图层操作")}};
+  const downloadBlob=(blob:Blob,name:string)=>{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+  const saveProject=()=>{const data={version:1,name:"浮游画室项目",savedAt:new Date().toISOString(),image,fileName,pieces};downloadBlob(new Blob([JSON.stringify(data)],{type:"application/json"}),`${fileName.replace(/\.[^.]+$/,"")||"浮游画室"}.float.json`);setStatus("项目文件已保存，可在任何电脑继续编辑")};
+  const loadProject=(file?:File)=>{if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(String(reader.result));if(!data.image||!Array.isArray(data.pieces))throw new Error();setImage(data.image);setFileName(data.fileName||file.name);setPieces(data.pieces);setSelected(null);setPoints([]);setHasMask(false);setMode("compose");runtime.current=null;history.current=[];setStatus("项目已恢复，可继续编排或重新启动智能拆解")}catch{setStatus("这不是有效的浮游画室项目文件")}};reader.readAsText(file)};
+  const exportSelectedPng=()=>{const p=pieces.find(x=>x.id===selected);if(!p){setStatus("请先选择一个元素");return}const a=document.createElement("a");a.href=p.src;a.download=`floating-element-${pieces.indexOf(p)+1}.png`;a.click()};
+  const exportZip=async()=>{if(!pieces.length)return;setStatus("正在整理完整网页项目…");const JSZip=(await import("jszip")).default;const zip=new JSZip();const elementPaths:string[]=[];pieces.forEach((p,i)=>{const base64=p.src.split(",")[1];const path=`elements/element-${i+1}.png`;zip.file(path,base64,{base64:true});elementPaths.push(path)});const css=`body{margin:0;min-height:100vh;background:#17152e;overflow:hidden}.piece{position:absolute;object-fit:contain;animation:float 4s ease-in-out infinite alternate}@keyframes float{to{transform:translateY(-25px) rotate(5deg)}}`;const body=pieces.map((p,i)=>`<img class="piece" src="${elementPaths[i]}" style="left:${p.x}%;top:${p.y}%;width:${p.w}%" alt="element ${i+1}">`).join("\n");zip.file("index.html",`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>浮游画室作品</title><link rel="stylesheet" href="style.css"><body>${body}</body></html>`);zip.file("style.css",css);zip.file("project.json",JSON.stringify({version:1,pieces:pieces.map(({src,...p},i)=>({...p,src:elementPaths[i]}))},null,2));zip.file("README.txt","双击 index.html 即可预览。elements 文件夹包含所有透明 PNG 图层，project.json 保存位置与动效配置。");downloadBlob(await zip.generateAsync({type:"blob"}),"floating-art-web-project.zip");setStatus("完整 ZIP 网页项目已导出")};
   const download=()=>{if(!pieces.length)return;const html=`<!doctype html><html><style>body{margin:0;min-height:100vh;background:#17152e;overflow:hidden}.p{position:absolute;object-fit:contain;animation:float 4s ease-in-out infinite alternate}@keyframes float{to{transform:translateY(-25px) rotate(5deg)}}</style><body>${pieces.map(p=>`<img class="p" src="${p.src}" style="left:${p.x}%;top:${p.y}%;width:${p.w}%">`).join("")}</body></html>`;const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));a.download="floating-studio.html";a.click()};
 
   return <main>
@@ -154,7 +166,7 @@ export default function Home() {
           </div>
           {image&&mode==="select"&&<div className="selectionBar"><div><button className={!excludeMode?"active":""} onClick={()=>setExcludeMode(false)}>＋ 保留笔</button><button className={excludeMode?"active":""} onClick={()=>setExcludeMode(true)}>− 排除笔</button></div><button onClick={clearSelection}>清除选点</button><button className="commit" onClick={commitMask} disabled={!hasMask}>提取为透明元素 ↗</button></div>}
         </div>
-        <aside className="rightPanel"><div className="panelTitle">动作魔法 <span>MOTION</span></div><p>{selected?`已选中元素 ${pieces.findIndex(p=>p.id===selected)+1}`:"先选择一个元素"}</p><div className="motions">{motions.map(m=><button key={m.id} onClick={()=>setMotion(m.id)} disabled={!selected} className={pieces.find(p=>p.id===selected)?.motion===m.id?"active":""}><b>{m.icon}</b><span>{m.label}<small>{m.en}</small></span></button>)}</div><div className="pieceActions"><button onClick={()=>setMode("select")} disabled={!image}>＋ 再提取一个</button><button onClick={removeSelected} disabled={!selected}>删除元素</button></div><div className="speed"><span>速度</span><input type="range" min="1" max="5" defaultValue="3" aria-label="动画速度"/></div><button className="export" onClick={download} disabled={!pieces.length}>导出网页片段 <span>↗</span></button><small className="exportNote">包含透明图层，可继续编辑</small></aside>
+        <aside className="rightPanel"><div className="panelTitle">动作魔法 <span>MOTION</span></div><p>{selected?`已选中元素 ${pieces.findIndex(p=>p.id===selected)+1}`:"先选择一个元素"}</p><div className="motions">{motions.map(m=><button key={m.id} onClick={()=>setMotion(m.id)} disabled={!selected} className={pieces.find(p=>p.id===selected)?.motion===m.id?"active":""}><b>{m.icon}</b><span>{m.label}<small>{m.en}</small></span></button>)}</div><div className="pieceActions"><button onClick={()=>setMode("select")} disabled={!image}>＋ 再提取一个</button><button onClick={removeSelected} disabled={!selected}>删除元素</button><button onClick={undo} disabled={!history.current.length}>↶ 撤销一步</button><button onClick={exportSelectedPng} disabled={!selected}>下载 PNG</button></div><div className="speed"><span>速度</span><input type="range" min="1" max="5" defaultValue="3" aria-label="动画速度"/></div><div className="projectActions"><button onClick={saveProject} disabled={!image}>保存项目</button><button onClick={()=>projectInput.current?.click()}>打开项目</button><input ref={projectInput} type="file" accept=".json,.float.json" onChange={e=>loadProject(e.target.files?.[0])}/></div><button className="export" onClick={exportZip} disabled={!pieces.length}>导出完整 ZIP 项目 <span>↗</span></button><button className="htmlExport" onClick={download} disabled={!pieces.length}>导出单文件 HTML</button><small className="exportNote">ZIP 包含独立 PNG、CSS 与项目配置</small></aside>
       </div>
     </section><footer><span>浮游画室 / 让静止的灵感获得重力之外的自由</span><b>POWERED LOCALLY BY SEGMENT ANYTHING ✦</b></footer>
   </main>;

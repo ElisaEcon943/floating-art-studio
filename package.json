@@ -1,6 +1,8 @@
 {
   "name": "site-creator-vinext-starter",
   "version": "0.1.0",
+  "productName": "浮游画室",
+  "main": "desktop/main.cjs",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -11,11 +13,14 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "desktop:dev": "electron .",
+    "desktop:dist": "electron-builder --win portable"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
     "drizzle-orm": "0.45.2",
+    "jszip": "^3.10.1",
     "next": "16.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6"
@@ -29,6 +34,8 @@
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",
@@ -38,5 +45,13 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "build": {
+    "appId": "studio.floating.art",
+    "productName": "浮游画室",
+    "directories": { "output": "release" },
+    "files": ["desktop/**/*", "package.json"],
+    "win": { "target": ["portable"], "artifactName": "Floating-Art-Studio-${version}-Windows.${ext}" },
+    "portable": { "artifactName": "Floating-Art-Studio-${version}-Windows.${ext}" }
+  }
 }
