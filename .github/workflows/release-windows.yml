@@ -19,6 +19,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Build embedded web app
+        shell: pwsh
+        run: |
+          $env:WRANGLER_LOG_PATH='.wrangler/wrangler.log'
+          npm exec vinext build
       - run: npm run desktop:dist
       - uses: actions/upload-artifact@v4
         with:

@@ -50,7 +50,8 @@
     "appId": "studio.floating.art",
     "productName": "浮游画室",
     "directories": { "output": "release" },
-    "files": ["desktop/**/*", "package.json"],
+    "files": ["desktop/**/*", "dist/**/*", "package.json"],
+    "asarUnpack": ["dist/**/*"],
     "win": { "target": ["portable"], "artifactName": "Floating-Art-Studio-${version}-Windows.${ext}" },
     "portable": { "artifactName": "Floating-Art-Studio-${version}-Windows.${ext}" }
   }
